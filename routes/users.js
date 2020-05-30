@@ -1,19 +1,40 @@
+require("dotenv").config();
+
 const express = require("express");
 const router = express.Router();
 const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const passport = require("passport");
 const { forwardAuthenticated } = require("../config/auth");
+const sendSms = require("../services/sms");
+const sendWhatsappMessage = require("../services/whatsapp");
+const sendMail = require("../services/email");
 
-// Login
+// Login Render
 router.get("/login", forwardAuthenticated, (req, res) => res.render("login"));
 
-// Sign up
+// Register Render
 router.get("/register", forwardAuthenticated, (req, res) =>
   res.render("register")
 );
 
-// Handle Register
+// Handle Google authentication
+router.get(
+  "/google",
+  passport.authenticate("google", {
+    scope: ["profile", "email"],
+  })
+);
+
+// Handle Facebook Authentication
+router.get(
+  "/facebook",
+  passport.authenticate("facebook", {
+    scope: ["profile", "email"],
+  })
+);
+
+// Handle Register for new users
 router.post("/register", (req, res) => {
   const { name, email, password, password2 } = req.body;
   var errors = [];
@@ -78,7 +99,10 @@ router.post("/register", (req, res) => {
                   "success_msg",
                   "You are now registered. Please continue to login"
                 );
-                res.redirect("/users/login");
+
+                // On successfull register send a message to the user
+                sendSms();
+                res.redirect("http://localhost:3001/login");
               })
               .catch((err) => console.log(err));
           })
@@ -88,20 +112,47 @@ router.post("/register", (req, res) => {
   }
 });
 
-// Handle Login
+// Handle Login and on success redirect to twilio URL to send SMS and Whatsapp Text
 router.post("/login", (req, res, next) => {
   passport.authenticate("local", {
-    successRedirect: "/dashboard",
+    successRedirect: "/users/login/twilio",
     failureRedirect: "/users/login",
     failureFlash: true,
   })(req, res, next);
 });
 
-// Handle Logout
+// Handle Logout from the home page and redirect  to login page
 router.get("/logout", (req, res) => {
   req.logOut();
   req.flash("success_msg", "You have successfully logged out");
-  res.redirect("/users/login");
+  res.redirect("http://localhost:3001/login");
+});
+
+// Google callback - when a google account is used for logging in
+router.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    failureRedirect: "/failed",
+    successRedirect: "/users/login/twilio",
+  })
+);
+
+// Facebook callback - when facebook account is used for logging in
+router.get(
+  "facebook/callback",
+  passport.authenticate("facebook", {
+    successRedirect: "/users/login/twilio",
+    failureRedirect: "/failed",
+  })
+);
+
+// Twilio implementation - send SMS, Gmail and Whatsapp text on suucessful logIn.
+router.get("/login/twilio", (req, res) => {
+  sendSms();
+  sendWhatsappMessage();
+  sendMail();
+
+  res.redirect("http://localhost:3001/home");
 });
 
 module.exports = router;
